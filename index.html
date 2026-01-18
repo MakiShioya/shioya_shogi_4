@@ -4,9 +4,71 @@
   <meta charset="UTF-8">
   <title>しおや将棋</title>
   <link rel="stylesheet" href="indexstyle.css">
+  <style>
+    /* 画面全体をフレックスボックスで配置 */
+    body {
+      display: flex;
+      justify-content: center;  /* 横方向中央揃え */
+      align-items: center;      /* 縦方向中央揃え */
+      height: 100vh;            /* 画面の高さを100%に設定 */
+      margin: 0;                /* ページの余白をなくす */
+      font-family: sans-serif;
+      flex-direction: column;   /* 縦方向の配置 */
+    }
+
+    /* メニューのスタイル */
+    #menu {
+      text-align: center;       /* テキストを中央に配置 */
+      margin-bottom: 600px;      /* 下に少しスペースを作成 */
+    }
+
+    /* 難易度選択メニュー */
+    #difficultyMenu {
+      text-align: center;  /* テキストを中央に配置 */
+      display: none;       /* 初期状態で非表示 */
+      margin-bottom: 300px;      /* 下に少しスペースを作成 */
+    }
+
+    }
+
+    /* 難易度選択ボタンのスタイル */
+    #difficultyMenu button {
+      width: 200px;
+      height: 50px;
+      margin: 10px 0;
+      font-size: 20px;
+      cursor: pointer;
+      border-radius: 5px;
+      background-color: #4CAF50; /* 緑色 */
+      color: white;
+      border: none;
+      transition: background-color 0.3s;
+    }
+
+    #difficultyMenu button:hover {
+      background-color: #45a049; /* ホバー時の色 */
+    }
+
+    /* メインメニューのボタン */
+    #menu button {
+      width: 200px;
+      height: 70px;
+      margin: 10px 0;
+      font-size: 20px;
+      cursor: pointer;
+      border-radius: 5px;
+      color: white;
+      border: none;
+      transition: background-color 0.3s;
+    }
+
+    #menu button:hover {
+      background-color: #45a049; /* ホバー時の色 */
+    }
+
+  </style>
 </head>
 <body>
-
 
   <div id="menu">
     <h1>しおや将棋</h1>
@@ -14,17 +76,36 @@
     <button onclick="startPlayerVsPlayer()">ふたりで</button>
   </div>
 
+  <div id="difficultyMenu">
+    <h2>対戦相手選択</h2>
+    <button onclick="startGame('easy')">たわむれ</button>
+    <button onclick="startGame('normal')">こみや</button>
+    <button onclick="startGame('hard')">しおや</button>
+  </div>
+
   <script>
     function startPlayerVsPlayer() {
       // プレイヤー同士の対戦モードを開始
-      window.location.href = "player_vs_player.html"; // これをプレイヤー同士の対戦用HTMLファイルに変更
+      window.location.href = "player_vs_player.html"; 
     }
 
     function startCpuVsPlayer() {
-      // CPU戦モードを開始
-      window.location.href = "cpu_vs_player.html"; // このファイルは後で作成します
+      // 「ひとりで」ボタンが押された時に難易度選択メニューを表示
+      document.getElementById('menu').style.display = 'none';  // メインメニューを隠す
+      document.getElementById('difficultyMenu').style.display = 'block';  // 難易度メニューを表示
+    }
+
+    function startGame(difficulty) {
+      // 選択された難易度に応じたページに遷移
+      if (difficulty === 'easy') {
+        window.location.href = "cpu_vs_player.html";
+      } else if (difficulty === 'normal') {
+        window.location.href = "cpu_vs_player2.html";
+      } else if (difficulty === 'hard') {
+        window.location.href = "cpu_vs_player3.html";
+      }
     }
   </script>
+
 </body>
 </html>
-
