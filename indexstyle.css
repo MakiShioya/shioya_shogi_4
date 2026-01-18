@@ -22,6 +22,13 @@ h1 {
   text-shadow: 2px 2px 5px rgba(0, 128, 0, 0.7), -2px -2px 5px rgba(0, 128, 0, 0.7); /* 緑色の縁取り */
 }
 
+h2 {
+  font-size: 5rem;
+  color: #FFB347; /* 薄いオレンジ色に変更 */
+  margin-bottom: 20px;
+  text-shadow: 2px 2px 5px rgba(0, 128, 0, 0.7), -2px -2px 5px rgba(0, 128, 0, 0.7); /* 緑色の縁取り */
+}
+
 
 
 button {
@@ -39,3 +46,4 @@ button {
 button:hover {
   background-color: rgba(0, 0, 0, 0.8); /* ホバー時に色を濃く */
 }
+
