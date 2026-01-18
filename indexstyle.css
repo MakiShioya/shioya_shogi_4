@@ -1,6 +1,6 @@
 /* 背景画像の設定 */
 body {
-  background-image: url('https://github.com/your-username/your-repository/raw/main/shogi_title.PNG'); /* 背景画像の指定 */
+  background-image: url('https://github.com/MakiShioya/shioya_shogi_4/blob/main/shogi_title.PNG?raw=true'); /* 背景画像の指定 */
   background-size: cover; /* 画像を全体に合わせてリサイズ */
   background-repeat: no-repeat; /* 画像の繰り返しを防ぐ */
   background-position: center center; /* 画像を中央に配置 */
@@ -37,5 +37,6 @@ button {
 button:hover {
   background-color: rgba(0, 0, 0, 0.8); /* ホバー時に色を濃く */
 }
+
 
 
