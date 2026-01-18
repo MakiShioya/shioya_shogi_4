@@ -123,19 +123,50 @@ button { padding: 6px 12px; font-size: 14px; cursor: pointer; }
   align-items: flex-start;
 }
 
-.square-btn {   /* ボタン */
+/* 待ったボタンのスタイル */
+#undoBtn {
   width: 160px;
   height: 160px;
-  font-size: 20px;
+  font-size: 36px;
   font-weight: bold;
-  border-radius: 10px;　　/* 丸み */
+  border-radius: 10px;
   cursor: pointer;
+  background-image: url('https://github.com/MakiShioya/shioya_shogi_4/blob/main/hyoshiki_red.PNG?raw=true'); /* 「待った」用の画像 */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #0C2CB9;
+  text-shadow:
+    -1px -1px 0 white,
+     1px -1px 0 white,
+    -1px  1px 0 white,
+     1px  1px 0 white;
+
+}
+
+/* 投了ボタンのスタイル */
+#resignBtn {
+  width: 160px;
+  height: 160px;
+  font-size: 36px;
+  font-weight: bold;
+  border-radius: 10px;
+  cursor: pointer;
+  background-image: url('https://github.com/MakiShioya/shioya_shogi_4/blob/main/hyoshiki.PNG?raw=true'); /* 「投了」用の画像 */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #B90C2C;
+  text-shadow:
+    -1px -1px 0 white,
+     1px -1px 0 white,
+    -1px  1px 0 white,
+     1px  1px 0 white;
+
 }
 
 
 /* 移動した場所に色をつける */
 .moved {
   background-color: #f58220; /* 明るい黄色 */
-
 }
-
