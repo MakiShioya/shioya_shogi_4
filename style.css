@@ -1,6 +1,7 @@
 body {
   font-family: sans-serif;
-  background: #f5f5dc;
+  background: url('https://github.com/MakiShioya/shioya_shogi_4/blob/main/haikei.PNG?raw=true'); /* 背景画像を指定 */
+  background-repeat: repeat; /* 画像を繰り返して表示 */
   display: flex;
   flex-direction: column;
   align-items: center; 
@@ -170,3 +171,4 @@ button { padding: 6px 12px; font-size: 14px; cursor: pointer; }
 .moved {
   background-color: #f58220; /* 明るい黄色 */
 }
+
