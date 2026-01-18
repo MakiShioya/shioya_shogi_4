@@ -1,0 +1,39 @@
+/* 背景画像の設定 */
+body {
+  background-image: url('shogi_title.png'); /* 背景画像の指定 */
+  background-size: cover; /* 画像を全体に合わせてリサイズ */
+  background-repeat: no-repeat; /* 画像の繰り返しを防ぐ */
+  background-position: center center; /* 画像を中央に配置 */
+  background-attachment: fixed; /* スクロールしても背景が動かないように設定 */
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+#menu {
+  text-align: center;
+  padding-top: 20%;
+}
+
+h1 {
+  font-size: 5rem;
+  color: #FFB347; /* 薄いオレンジ色に変更 */
+  margin-bottom: 20px;
+  text-shadow: 2px 2px 5px rgba(0, 128, 0, 0.7), -2px -2px 5px rgba(0, 128, 0, 0.7); /* 緑色の縁取り */
+}
+
+button {
+  font-size: 1.5rem;
+  padding: 15px 30px;
+  margin: 10px;
+  cursor: pointer;
+  background-color: rgba(0, 0, 0, 0.5); /* 背景色を薄く */
+  color: white; /* ボタンの文字色を白に */
+  border: none;
+  border-radius: 5px;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: rgba(0, 0, 0, 0.8); /* ホバー時に色を濃く */
+}

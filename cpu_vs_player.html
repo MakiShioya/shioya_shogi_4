@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>しおや将棋 CPU対戦</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game">
+
+  <!-- 左側 -->
+  <div class="side left">
+    <div class="hand white-hand" id="whiteHandBox">
+      <h3>後手の持ち駒</h3>
+      <div id="whiteHand"></div>
+    </div>
+    <button id="undoBtn" class="square-btn" onclick="undoMove()">待った</button>
+  </div>
+
+  <!-- 中央 -->
+  <div id="center">
+    <div id="status"></div>
+    <div id="checkStatus"></div>
+    <table id="board"></table>
+
+  </div>
+
+  <!-- 右側 -->
+  <div class="side right">
+    <button id="resignBtn" class="square-btn" onclick="resign()">投了</button>
+    <div class="hand black-hand" id="blackHandBox">
+      <h3>先手の持ち駒</h3>
+      <div id="blackHand"></div>
+    </div>
+  </div>
+
+</div>
+
+<div id="kifu" style="margin-top: 10px; text-align: left;"></div>
+
+<script>
+
+let cpuEnabled = true;
+let cpuSide = "white";
+
+let bgm;
+
+window.addEventListener("load", () => {
+  bgm = document.getElementById("bgm");
+  playBGM();
+});
+
+function playBGM() {
+  bgm.volume = 0.3;
+  bgm.play().catch(() => {
+    document.addEventListener("click", playBGM, { once: true });
+  });
+}
+
+function stopBGM() {
+  bgm.pause();
+  bgm.currentTime = 0;
+}
+
+window.onload = () => {
+  playBGM();
+};
+
+
+// 効果音
+
+let moveSound, promoteSound;
+window.addEventListener("load", () => {
+  bgm = document.getElementById("bgm");
+  moveSound = document.getElementById("moveSound");
+  promoteSound = document.getElementById("promoteSound");
+  playBGM();
+});
+
+
+const board = document.getElementById("board");
+const blackHandDiv = document.getElementById("blackHand");
+const whiteHandDiv = document.getElementById("whiteHand");
+const statusDiv = document.getElementById("status");
+const checkStatusDiv = document.getElementById("checkStatus");
+const resignBtn = document.getElementById("resignBtn");
+resignBtn.addEventListener("click", resignGame);
+
+
+const pieceName = {
+  "P": "歩","L":"香","N":"桂","S":"銀","G":"金","B":"角","R":"飛","K":"玉",
+  "+P":"と","+L":"成香","+N":"成桂","+S":"成銀","+B":"馬","+R":"龍"
+};
+
+let boardState = [
+  ["l","n","s","g","k","g","s","n","l"],
+  ["","r","","","","","","b",""],
+  ["p","p","p","p","p","p","p","p","p"],
+  ["","","","","","","","",""],
+  ["","","","","","","","",""],
+  ["","","","","","","","",""],
+  ["P","P","P","P","P","P","P","P","P"],
+  ["","B","","","","","","R",""],
+  ["L","N","S","G","K","G","S","N","L"]
+];
+
+let hands = { black: [], white: [] };
+let turn = "black";
+let selected = null;
+let legalMoves = [];
+let history = [];
+let positionHistory = {};
+let gameOver = false;
+let winner = null;
+let moveCount = 0;
+let repetitionHistory = {};
+let kifu = [];
+let lastMoveTo = null;
+let isSimulating = false;
+let lastPlayerMove = null;
+
+
+
+/*基本操作*/
+
+function deepCopyState() {
+  return {
+    board: boardState.map(r => r.slice()),
+    hands: {
+      black: hands.black.slice(),
+      white: hands.white.slice()
+    },
+    turn: turn,
+    moveCount: moveCount,
+    kifu: kifu.slice(),
+    positionHistory: JSON.parse(JSON.stringify(positionHistory)),
+    repetitionHistory: JSON.parse(JSON.stringify(repetitionHistory)),
+    lastMoveTo: lastMoveTo ? { ...lastMoveTo } : null
+  };
+}
+
+function restoreState(state) {
+  boardState = state.board.map(r => r.slice());
+  hands.black = state.hands.black.slice();
+  hands.white = state.hands.white.slice();
+  turn = state.turn;
+  selected = null;
+  legalMoves = [];
+}
+
+function undoMove() {
+  if (history.length < 2 || gameOver) return;  // 2手以上履歴がない場合は戻せない
+
+  // 2手前の状態を取り出す
+  const prev = history[history.length - 2];  // 2手前の状態を選ぶ
+  history.length -= 2;  // 履歴を2手分削除
+
+  // 2手前の状態に戻す
+  boardState = prev.board.map(r => r.slice());
+  hands.black = prev.hands.black.slice();
+  hands.white = prev.hands.white.slice();
+  turn = prev.turn;
+  moveCount = prev.moveCount;
+  kifu = prev.kifu.slice();
+  positionHistory = JSON.parse(JSON.stringify(prev.positionHistory));
+  repetitionHistory = JSON.parse(JSON.stringify(prev.repetitionHistory));
+  lastMoveTo = prev.lastMoveTo ? { ...prev.lastMoveTo } : null;
+
+  gameOver = false;
+  winner = null;
+  statusDiv.textContent = "";
+  checkStatusDiv.textContent = "";
+
+  render();
+  showKifu();
+}
+
+
+/*描画*/
+
+function render() {
+  if (gameOver) {
+    if (winner === "black") {
+      statusDiv.textContent = "先手の勝ちです！";
+    } else if (winner === "white") {
+      statusDiv.textContent = "後手の勝ちです！";
+    } else {
+      statusDiv.textContent = "千日手です。引き分け。";
+    }
+    checkStatusDiv.textContent = "";
+  } else {
+    statusDiv.textContent =
+      "現在の手番：" + (turn === "black" ? "先手" : "後手") +
+      " / 手数：" + moveCount +
+      (isKingInCheck(turn) ? "　王手！" : "");
+
+    checkStatusDiv.textContent = "";
+  }
+
+  board.innerHTML = "";
+  for (let y = 0; y < 9; y++) {
+    const tr = document.createElement("tr");
+    for (let x = 0; x < 9; x++) {
+      const td = document.createElement("td");
+      const piece = boardState[y][x];
+      if (piece) {
+        const isWhite = piece === piece.toLowerCase();
+        const key = piece.startsWith("+") ? "+" + piece.replace("+","").toUpperCase() : piece.toUpperCase();
+        td.textContent = pieceName[key];
+        if (isWhite) td.style.transform = "rotate(180deg)";
+
+  // 直前に移動した場所に色をつける
+      if (lastMoveTo && lastMoveTo.x === x && lastMoveTo.y === y) {
+        td.classList.add("moved");
+      }
+
+      }
+      if (selected && !selected.fromHand && selected.x === x && selected.y === y) td.classList.add("selected");
+      if (legalMoves.some(m => m.x === x && m.y === y)) td.classList.add("move");
+      td.onclick = () => onCellClick(x, y);
+      tr.appendChild(td);
+    }
+    board.appendChild(tr);
+  }
+    renderHands();
+
+  // 駒台の光り切り替え
+  const blackBox = document.getElementById("blackHandBox");
+  const whiteBox = document.getElementById("whiteHandBox");
+
+  blackBox.classList.remove("active");
+  whiteBox.classList.remove("active");
+
+  if (!gameOver) {
+    if (turn === "black") {
+      blackBox.classList.add("active");
+    } else {
+      whiteBox.classList.add("active");
+    }
+  }
+}
+
+
+function renderHands() {
+  const order = ["P", "L", "N", "S", "G", "B", "R"];
+  hands.black.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  hands.white.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+
+  blackHandDiv.innerHTML = "";
+  whiteHandDiv.innerHTML = "";
+
+  hands.black.forEach((p, i) => {
+    const span = document.createElement("span");
+    span.textContent = pieceName[p];
+    if (selected && selected.fromHand && selected.player === "black" && selected.index === i) span.classList.add("selected");
+    span.onclick = () => selectFromHand("black", i);
+    blackHandDiv.appendChild(span);
+  });
+
+  hands.white.forEach((p, i) => {
+    const span = document.createElement("span");
+    span.textContent = pieceName[p];
+    if (selected && selected.fromHand && selected.player === "white" && selected.index === i) span.classList.add("selected");
+    span.onclick = () => selectFromHand("white", i);
+    whiteHandDiv.appendChild(span);
+  });
+}
+
+/*入力*/
+
+function onCellClick(x, y) {
+  if (gameOver) return;
+
+  // CPUの手番中はプレイヤーの入力を無効にする
+  if (cpuEnabled && turn === cpuSide) {
+    return; // CPUの手番中はクリックできない
+  }
+
+  if (!selected) {
+    const piece = boardState[y][x];
+    if (!piece) return;
+
+    const isWhite = piece === piece.toLowerCase();
+    if ((turn === "black" && isWhite) || (turn === "white" && !isWhite)) return;
+
+    selected = { x, y, fromHand: false };
+    legalMoves = getLegalMoves(x, y);
+    render();
+    return;
+  }
+
+  const sel = selected;
+
+  if (legalMoves.some(m => m.x === x && m.y === y)) {
+    movePieceWithSelected(sel, x, y);
+  }
+
+  selected = null;
+  legalMoves = [];
+  render();
+}
+
+
+function selectFromHand(player, index) {
+  if (gameOver) return;
+
+  if (turn !== player) return;
+  selected = { fromHand: true, player, index };
+  legalMoves = getLegalDrops(player, hands[player][index]);
+  render();
+}
+
+function movePieceWithSelected(sel, x, y) {
+  history.push(deepCopyState());
+
+  const pieceBefore = sel.fromHand
+    ? hands[sel.player][sel.index]
+    : boardState[sel.y][sel.x];
+
+  const boardBefore = boardState.map(r => r.slice());
+
+  const moveNumber = kifu.length + 1;
+  kifu.push("");  
+
+  // さしたときの音
+  moveSound.currentTime = 0;
+  moveSound.volume = 0.3;
+  moveSound.play();
+
+  if (sel.fromHand) {
+    const piece = hands[sel.player][sel.index];
+    boardState[y][x] = sel.player === "black" ? piece : piece.toLowerCase();
+    hands[sel.player].splice(sel.index, 1);
+  } else {
+    let piece = boardState[sel.y][sel.x];
+    const target = boardState[y][x];
+
+    if (target) {
+      hands[turn].push(target.replace("+","").toUpperCase());
+    }
+
+    const isWhite = piece === piece.toLowerCase();
+    const player = isWhite ? "white" : "black";
+    const isPromoted = piece.includes("+");
+    const base = piece.replace("+","").toUpperCase();
+
+    if (!isPromoted &&
+        canPromote(base) &&
+        (isInPromotionZone(sel.y, player) || isInPromotionZone(y, player))) {
+
+      if (cpuEnabled && turn === cpuSide) {
+        piece = promote(piece.toUpperCase());
+        if (player === "white") piece = piece.toLowerCase();
+        sel.promoted = true;
+      } else {
+        const mustPromote =
+          (base === "P" || base === "L") && (y === (player === "black" ? 0 : 8)) ||
+          (base === "N") && (y === (player === "black" ? 0 : 8) || y === (player === "black" ? 1 : 7));
+        if (mustPromote || confirm("成りますか？")) {
+          piece = promote(piece.toUpperCase());
+          if (player === "white") piece = piece.toLowerCase();
+          sel.promoted = true;
+
+          // 成ったときの音
+          promoteSound.currentTime = 0;
+          promoteSound.volume = 0.8;
+          promoteSound.play();
+        } else {
+          sel.unpromoted = true;
+        }
+      }
+    }
+
+    boardState[sel.y][sel.x] = "";
+    boardState[y][x] = piece;
+  }
+
+  kifu[kifu.length - 1] = formatMove(sel, x, y, pieceBefore, boardBefore, moveNumber);
+  lastMoveTo = { x, y };
+
+  if (!isSimulating && turn !== cpuSide) {
+    lastPlayerMove = {
+      piece: pieceBefore.replace("+","").toUpperCase(),
+      toX: x,
+      toY: y
+    };
+  }
+
+  // 手番交代
+  turn = turn === "black" ? "white" : "black";
+  showKifu();
+
+  // CPUの手番なら自動で指す
+  if (!isSimulating && cpuEnabled && turn === cpuSide && !gameOver) {
+    setTimeout(() => cpuMove(), 1000); // 1秒でCPUの手を指す
+  }
+
+  // 500手引き分け
+  moveCount++;
+  if (moveCount >= 500) {
+    gameOver = true;
+    winner = null;
+    statusDiv.textContent = "500手に達したため、引き分けです。";
+    showKifu();
+    return;
+  }
+
+  // 詰み判定
+  if (isKingInCheck(turn) && !hasAnyLegalMove(turn)) {
+    gameOver = true;
+    winner = turn === "black" ? "white" : "black";
+    showKifu();
+  }
+
+  // 千日手判定
+  const key = getPositionKey();
+  positionHistory[key] = (positionHistory[key] || 0) + 1;
+
+  recordRepetition();
+
+  if (positionHistory[key] >= 4) {
+    const records = repetitionHistory[key].slice(-4);
+
+    const allCheck = records.every(r => r.isCheck);
+    const sameSide = records.every(r => r.checkingSide === records[0].checkingSide);
+
+    gameOver = true;
+    if (allCheck && sameSide && records[0].checkingSide !== null) {
+      winner = records[0].checkingSide === "black" ? "white" : "black";
+      statusDiv.textContent = "連続王手の千日手です。王手をかけ続けた側の負けです。";
+    } else {
+      winner = null;
+      statusDiv.textContent = "千日手です。引き分け。";
+      showKifu();
+    }
+  }
+}
+
+
+/*成り*/
+
+function isInPromotionZone(y, player) { return player === "black" ? y <= 2 : y >= 6; }
+function canPromote(piece) { return ["P","L","N","S","B","R"].includes(piece); }
+function promote(piece) { return piece.startsWith("+") ? piece : "+" + piece; }
+
+/*王手判定*/
+
+function findKing(player) {
+  const k = player === "black" ? "K" : "k";
+  for (let y = 0; y < 9; y++)
+    for (let x = 0; x < 9; x++)
+      if (boardState[y][x] === k) return {x, y};
+  return null;
+}
+
+function isKingInCheck(player) {
+  const king = findKing(player);
+  if (!king) return false;
+  const opponent = player === "black" ? "white" : "black";
+
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const p = boardState[y][x];
+      if (!p) continue;
+      const isWhite = p === p.toLowerCase();
+      if ((opponent === "white" && isWhite) || (opponent === "black" && !isWhite)) {
+        const moves = getRawLegalMoves(x, y);
+        if (moves.some(m => m.x === king.x && m.y === king.y)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/*駒の動き*/
+
+function getRawLegalMoves(x, y) {
+  const piece = boardState[y][x];
+  const isWhite = piece === piece.toLowerCase();
+  const player = isWhite ? "white" : "black";
+  const dir = player === "black" ? -1 : 1;
+  const base = piece.replace("+","").toUpperCase();
+  const promoted = piece.startsWith("+");
+  const moves = [];
+
+  function add(nx, ny) {
+    if (nx < 0 || nx > 8 || ny < 0 || ny > 8) return false;
+    const target = boardState[ny][nx];
+    if (target && (target === target.toLowerCase()) === isWhite) return false;
+    moves.push({ x: nx, y: ny });
+    return !target;
+  }
+  function slide(dx, dy) {
+    let nx = x + dx, ny = y + dy;
+    while (add(nx, ny)) {
+      nx += dx;
+      ny += dy;
+    }
+  }
+
+  if (!promoted) {
+    switch (base) {
+      case "P": add(x, y + dir); break;
+      case "L": slide(0, dir); break;
+      case "N": add(x - 1, y + 2 * dir); add(x + 1, y + 2 * dir); break;
+      case "S":
+        add(x - 1, y + dir); add(x, y + dir); add(x + 1, y + dir);
+        add(x - 1, y - dir); add(x + 1, y - dir); break;
+      case "G":
+        add(x - 1, y + dir); add(x, y + dir); add(x + 1, y + dir);
+        add(x - 1, y); add(x + 1, y); add(x, y - dir); break;
+      case "K":
+        for (let dx = -1; dx <= 1; dx++)
+          for (let dy = -1; dy <= 1; dy++)
+            if (dx || dy) add(x + dx, y + dy);
+        break;
+      case "B": slide(1,1); slide(-1,1); slide(1,-1); slide(-1,-1); break;
+      case "R": slide(1,0); slide(-1,0); slide(0,1); slide(0,-1); break;
+    }
+  } else {
+    if (base === "B") {
+      slide(1,1); slide(-1,1); slide(1,-1); slide(-1,-1);
+      add(x-1,y); add(x+1,y); add(x,y-1); add(x,y+1);
+    } else if (base === "R") {
+      slide(1,0); slide(-1,0); slide(0,1); slide(0,-1);
+      add(x-1,y-1); add(x+1,y-1); add(x-1,y+1); add(x+1,y+1);
+    } else {
+      add(x - 1, y + dir); add(x, y + dir); add(x + 1, y + dir);
+      add(x - 1, y); add(x + 1, y); add(x, y - dir);
+    }
+  }
+  return moves;
+}
+
+/* 自玉王手の禁止*/
+
+function getLegalMoves(x, y) {
+  const raw = getRawLegalMoves(x, y);
+  const piece = boardState[y][x];
+  const isWhite = piece === piece.toLowerCase();
+  const player = isWhite ? "white" : "black";
+
+  return raw.filter(m => {
+    const fromPiece = boardState[y][x];
+    const toPiece = boardState[m.y][m.x];
+
+    // 盤面を一時的に変更
+    boardState[m.y][m.x] = fromPiece;
+    boardState[y][x] = "";
+
+    const inCheck = isKingInCheck(player);
+
+    // 元に戻す
+    boardState[y][x] = fromPiece;
+    boardState[m.y][m.x] = toPiece;
+
+    return !inCheck;
+  });
+}
+
+
+/*持ち駒打ち自玉王手二歩禁止*/
+
+function getLegalDrops(player, piece) {
+  const moves = [];
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      if (boardState[y][x] !== "") continue;
+
+      // 打てない段チェック
+      if ((piece === "P" || piece === "L") &&
+          y === (player === "black" ? 0 : 8)) continue;
+      if (piece === "N" &&
+          (y === (player === "black" ? 0 : 8) ||
+           y === (player === "black" ? 1 : 7))) continue;
+
+      // 二歩禁止
+      if (piece === "P") {
+        let nifu = false;
+        for (let ty = 0; ty < 9; ty++) {
+          const p = boardState[ty][x];
+          if (p && p.toUpperCase() === "P" && !p.startsWith("+") &&
+              ((p === p.toUpperCase()) === (player === "black"))) {
+            nifu = true;
+            break;
+          }
+        }
+        if (nifu) continue;
+
+        // 打ち歩詰め禁止
+        if (isPawnDropMate(x, y, player)) continue;
+      }
+
+      // 自玉王手禁止
+      const placed = player === "black" ? piece : piece.toLowerCase();
+      boardState[y][x] = placed;
+      const inCheck = isKingInCheck(player);
+      boardState[y][x] = "";
+      if (inCheck) continue;
+
+      moves.push({ x, y });
+    }
+  }
+  return moves;
+}
+
+
+/*新規関数*/
+
+function hasAnyLegalMove(player) {
+  // 盤上の駒
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const p = boardState[y][x];
+      if (!p) continue;
+      const isWhite = p === p.toLowerCase();
+      if ((player === "black" && !isWhite) || (player === "white" && isWhite)) {
+        if (getLegalMoves(x, y).length > 0) return true;
+      }
+    }
+  }
+  // 持ち駒
+  const hand = hands[player];
+  for (let i = 0; i < hand.length; i++) {
+    if (getLegalDrops(player, hand[i]).length > 0) return true;
+  }
+  return false;
+}
+
+
+function isPawnDropMate(x, y, player) {
+  // 歩を仮に打つ
+  const piece = player === "black" ? "P" : "p";
+  boardState[y][x] = piece;
+
+  // 相手番にしてチェック
+  const opponent = player === "black" ? "white" : "black";
+  const inCheck = isKingInCheck(opponent);
+  const hasMove = hasAnyLegalMove(opponent);
+
+  // 元に戻す
+  boardState[y][x] = "";
+
+  // 王手かつ合法手なし → 打ち歩詰め
+  return inCheck && !hasMove;
+}
+
+
+function getPositionKey() {
+  const boardKey = boardState.map(r => r.join("")).join("/");
+  const blackHand = hands.black.slice().sort().join("");
+  const whiteHand = hands.white.slice().sort().join("");
+  return boardKey + "|" + blackHand + "|" + whiteHand + "|" + turn;
+}
+
+
+function getRepetitionKey() {
+  return getPositionKey();
+}
+
+
+function recordRepetition() {
+  const key = getPositionKey();
+  if (!repetitionHistory[key]) {
+    repetitionHistory[key] = [];
+  }
+
+  // 今の局面で王手をかけている側を記録
+  const isCheck = isKingInCheck(turn);
+  const checkingSide = isCheck ? (turn === "black" ? "white" : "black") : null;
+
+  repetitionHistory[key].push({
+    isCheck,
+    checkingSide
+  });
+}
+
+
+function resignGame() {
+  if (gameOver) return;
+  if (!confirm("投了？")) return;
+
+  gameOver = true;
+  winner = turn === "black" ? "white" : "black";
+  statusDiv.textContent = "投了により、" + (winner === "black" ? "先手" : "後手") + "の勝ちです。";
+  checkStatusDiv.textContent = "";
+  showKifu();
+}
+
+</script>
+
+<script src="kifu.js"></script>
+
+<script>
+
+/*CPUの静かな手実行関数*/
+
+function makeSilentMove(move) {
+  const player = move.fromHand ? move.player : (boardState[move.y0][move.x0] === boardState[move.y0][move.x0].toLowerCase() ? "white" : "black");
+
+  if (move.fromHand) {
+    const piece = hands[player][move.index];
+    boardState[move.y1][move.x1] = player === "black" ? piece : piece.toLowerCase();
+    hands[player].splice(move.index, 1);
+  } else {
+    let piece = boardState[move.y0][move.x0];
+    const target = boardState[move.y1][move.x1];
+    if (target) {
+      hands[player].push(target.replace("+","").toUpperCase());
+    }
+    boardState[move.y0][move.x0] = "";
+    boardState[move.y1][move.x1] = piece;
+  }
+
+  turn = turn === "black" ? "white" : "black";
+}
+
+
+/*CPUのタダ取り用関数*/
+
+function isSafeAfterCapture(move, player) {
+  const snapshot = deepCopyState();
+
+  makeSilentMove(move);
+
+  const opponent = player === "black" ? "white" : "black";
+  const opponentMoves = getAllLegalMoves(opponent);
+
+  // 相手が直後に、そのマスを取り返せるか？
+  const capturedSquare = { x: move.x1, y: move.y1 };
+  const isRecaptured = opponentMoves.some(m =>
+    !m.fromHand &&
+    m.x1 === capturedSquare.x &&
+    m.y1 === capturedSquare.y
+  );
+
+  restoreState(snapshot);
+  return !isRecaptured;
+}
+
+
+/*CPU関数*/
+
+function cpuMove() {
+  if (gameOver) return;
+
+  // ★ ③ 20手目以内 & 直前が「２五歩」なら ３二金 or ３三角
+  if (
+    moveCount < 20 &&
+    lastPlayerMove &&
+    lastPlayerMove.piece === "P" &&
+    lastPlayerMove.toX === 7 && // ２筋
+    lastPlayerMove.toY === 4    // ５段目
+  ) {
+
+    // ① まず３二金を探す
+    for (let y = 0; y < 9; y++) {
+      for (let x = 0; x < 9; x++) {
+        const p = boardState[y][x];
+        if (cpuSide === "white" && p === "g") {
+          const moves = getLegalMoves(x, y);
+          if (moves.some(m => m.x === 6 && m.y === 1)) {
+            selected = { x, y, fromHand: false };
+            movePieceWithSelected(selected, 6, 1);
+            selected = null;
+            legalMoves = [];
+            render();
+            return;
+          }
+        }
+      }
+    }
+    // ② ３二金が無理なら３三角
+    for (let y = 0; y < 9; y++) {
+      for (let x = 0; x < 9; x++) {
+        const p = boardState[y][x];
+        if (cpuSide === "white" && p === "b") {
+          const moves = getLegalMoves(x, y);
+          if (moves.some(m => m.x === 6 && m.y === 2)) {
+            selected = { x, y, fromHand: false };
+            movePieceWithSelected(selected, 6, 2);
+            selected = null;
+            legalMoves = [];
+            render();
+            return;
+          }
+        }
+      }
+    }
+  }
+
+
+  // ★ ② 2手目は必ず「３四歩」
+  if (moveCount === 1 && cpuSide === "white") {
+    const fromX = 6; // ３筋
+    const fromY = 2; // ３段目（0始まり）
+    const toX = 6;
+    const toY = 3;   // ４段目
+
+    selected = { x: fromX, y: fromY, fromHand: false };
+    movePieceWithSelected(selected, toX, toY);
+    selected = null;
+    legalMoves = [];
+    render();
+    return;
+  }
+
+  // ★ ③と②の次に優先：タダ取り
+  const captureMoves = getAllLegalMoves(cpuSide).filter(m => {
+    if (m.fromHand) return false;
+    const target = boardState[m.y1][m.x1];
+    if (!target) return false;
+
+    const mover = boardState[m.y0][m.x0];
+
+    const targetKey = target.startsWith("+")
+      ? "+" + target.replace("+", "").toUpperCase()
+      : target.toUpperCase();
+
+    const moverKey = mover.startsWith("+")
+      ? "+" + mover.replace("+", "").toUpperCase()
+      : mover.toUpperCase();
+
+    const targetValue = pieceValues[targetKey] || 0;
+    const moverValue = pieceValues[moverKey] || 0;
+
+    // 原則：取る駒 ≥ 動かす駒
+    if (targetValue >= moverValue) return true;
+
+    // 例外：直後に取り返されないならOK
+    return isSafeAfterCapture(m, cpuSide);
+  });
+
+  if (captureMoves.length > 0) {
+    let bestCapture = null;
+    let bestValue = -Infinity;
+
+    for (const move of captureMoves) {
+      const target = boardState[move.y1][move.x1];
+      const key = target.startsWith("+")
+        ? "+" + target.replace("+", "").toUpperCase()
+        : target.toUpperCase();
+      const value = pieceValues[key] || 0;
+
+      if (value > bestValue) {
+        bestValue = value;
+        bestCapture = move;
+      }
+    }
+
+    if (bestCapture) {
+      if (bestCapture.fromHand) {
+        selected = { fromHand: true, player: cpuSide, index: bestCapture.index };
+        movePieceWithSelected(selected, bestCapture.x1, bestCapture.y1);
+      } else {
+        selected = { x: bestCapture.x0, y: bestCapture.y0, fromHand: false };
+        movePieceWithSelected(selected, bestCapture.x1, bestCapture.y1);
+      }
+      selected = null;
+      legalMoves = [];
+      render();
+      return;
+    }
+  }
+
+
+  // 通常思考あああああああああああああああああああああああああああああああああああああああああああああああ
+  const bestMove = findBestMove(3);
+
+  if (!bestMove) return;
+
+  if (bestMove.fromHand) {
+    selected = { fromHand: true, player: cpuSide, index: bestMove.index };
+    movePieceWithSelected(selected, bestMove.x1, bestMove.y1);
+  } else {
+    selected = { x: bestMove.x0, y: bestMove.y0, fromHand: false };
+    movePieceWithSelected(selected, bestMove.x1, bestMove.y1);
+  }
+
+  selected = null;
+  legalMoves = [];
+  render();
+}
+
+
+/*CPU評価*/
+
+const pieceValues = {
+  "P": 100, "L": 300, "N": 300, "S": 500,
+  "G": 600, "B": 800, "R": 1000, "K": 10000,
+  "+P": 500, "+L": 500, "+N": 500, "+S": 600,
+  "+B": 900, "+R": 1100
+};
+
+function evaluateBoard(player) {
+  let score = 0;
+
+  // 盤上の駒
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const p = boardState[y][x];
+      if (!p) continue;
+      const isWhite = p === p.toLowerCase();
+      const owner = isWhite ? "white" : "black";
+      const key = p.startsWith("+") ? "+" + p.replace("+","").toUpperCase() : p.toUpperCase();
+      const value = pieceValues[key] || 0;
+      score += (owner === player) ? value : -value;
+    }
+  }
+
+  // 持ち駒
+  hands[player].forEach(p => score += pieceValues[p] || 0);
+  const opponent = player === "black" ? "white" : "black";
+  hands[opponent].forEach(p => score -= pieceValues[p] || 0);
+
+  return score;
+}
+
+/*合法手取得*/
+
+function getAllLegalMoves(player) {
+  const allMoves = [];
+
+  // 序盤制限：CPUは6手目まで香車を動かさない
+  const openingPhase = moveCount < 6;
+
+  // 盤上の駒
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const p = boardState[y][x];
+      if (!p) continue;
+      const isWhite = p === p.toLowerCase();
+      if ((player === "black" && !isWhite) || (player === "white" && isWhite)) {
+        const base = p.replace("+", "").toUpperCase();
+
+        // ★ 香車を序盤は動かさせない
+        if (openingPhase && base === "L") continue;
+
+        const moves = getLegalMoves(x, y);
+        moves.forEach(m => {
+          allMoves.push({ fromHand: false, x0: x, y0: y, x1: m.x, y1: m.y });
+        });
+      }
+    }
+  }
+
+  // 持ち駒打ち
+  const hand = hands[player];
+  for (let i = 0; i < hand.length; i++) {
+    const piece = hand[i];
+
+    // 香車の打ちも序盤は禁止
+    if (openingPhase && piece === "L") continue;
+
+    const drops = getLegalDrops(player, piece);
+    drops.forEach(m => {
+      allMoves.push({ fromHand: true, player, index: i, x1: m.x, y1: m.y });
+    });
+  }
+
+  return allMoves;
+}
+
+/*ミニマックス*/
+
+function findBestMove(depth = 5) {
+  isSimulating = true;
+
+  const player = cpuSide;
+  const allMoves = getAllLegalMoves(player);
+
+  let bestScore = -Infinity;
+  let bestMove = null;
+
+  for (const move of allMoves) {
+    const snapshot = deepCopyState();
+    makeSilentMove(move);
+
+    // アルファベータ剪定を使って評価
+    const score = minimax(depth - 1, false, -Infinity, Infinity);
+
+    restoreState(snapshot);
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestMove = move;
+    }
+  }
+
+  isSimulating = false;
+  return bestMove;
+}
+
+function minimax(depth, isMaximizing, alpha, beta) {
+  if (depth === 0 || gameOver) {
+    return evaluateBoard(cpuSide);
+  }
+
+  const player = isMaximizing ? cpuSide : (cpuSide === "black" ? "white" : "black");
+  const moves = getAllLegalMoves(player);
+
+  if (moves.length === 0) {
+    if (isKingInCheck(player)) {
+      return isMaximizing ? -100000 : 100000;
+    }
+    return 0;
+  }
+
+  if (isMaximizing) {
+    let maxEval = -Infinity;
+    for (const move of moves) {
+      const snapshot = deepCopyState();
+      makeSilentMove(move);
+      const eval = minimax(depth - 1, false, alpha, beta);
+      restoreState(snapshot);
+
+      maxEval = Math.max(maxEval, eval);
+      alpha = Math.max(alpha, maxEval);  // αを更新
+
+      if (beta <= alpha) {
+        break;  // βカット
+      }
+    }
+    return maxEval;
+  } else {
+    let minEval = Infinity;
+    for (const move of moves) {
+      const snapshot = deepCopyState();
+      makeSilentMove(move);
+      const eval = minimax(depth - 1, true, alpha, beta);
+      restoreState(snapshot);
+
+      minEval = Math.min(minEval, eval);
+      beta = Math.min(beta, minEval);  // βを更新
+
+      if (beta <= alpha) {
+        break;  // αカット
+      }
+    }
+    return minEval;
+  }
+}
+
+
+</script>
+
+<audio id="bgm" src="natsu2.mp3" loop></audio>
+<audio id="moveSound" src="move.mp3"></audio>
+<audio id="promoteSound" src="promote.mp3"></audio>
+
+</body>
+</html>

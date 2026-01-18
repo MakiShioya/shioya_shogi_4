@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>しおや将棋</title>
+  <link rel="stylesheet" href="indexstyle.css">
+</head>
+<body>
+
+
+  <div id="menu">
+    <h1>しおや将棋</h1>
+    <button onclick="startCpuVsPlayer()">ひとりで</button>
+    <button onclick="startPlayerVsPlayer()">ふたりで</button>
+  </div>
+
+  <script>
+    function startPlayerVsPlayer() {
+      // プレイヤー同士の対戦モードを開始
+      window.location.href = "player_vs_player.html"; // これをプレイヤー同士の対戦用HTMLファイルに変更
+    }
+
+    function startCpuVsPlayer() {
+      // CPU戦モードを開始
+      window.location.href = "cpu_vs_player.html"; // このファイルは後で作成します
+    }
+  </script>
+</body>
+</html>
+
