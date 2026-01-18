@@ -45,7 +45,7 @@ td.move { background: #90ee90; }
 
 /* 先手 */
 .black-hand {
-  background-image: url("karui_1p.PNG");
+  background-image: url('https://github.com/MakiShioya/shioya_shogi_4/blob/main/karui_1p.PNG?raw=true');
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
@@ -136,4 +136,5 @@ button { padding: 6px 12px; font-size: 14px; cursor: pointer; }
 /* 移動した場所に色をつける */
 .moved {
   background-color: #f58220; /* 明るい黄色 */
+
 }
