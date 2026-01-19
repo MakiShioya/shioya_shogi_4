@@ -36,6 +36,16 @@
 
 </div>
 
+<div id="center">
+    <div id="status"></div>
+    
+    <div id="timerBox" style="font-weight: bold; font-size: 18px; margin: 5px 0; color: #333;">
+      考慮時間: 0秒
+    </div>
+    <div id="checkStatus"></div>
+    <table id="board"></table>
+  </div>
+
 <div id="kifu" style="margin-top: 10px; text-align: left;"></div>
 
 <script>
@@ -64,6 +74,7 @@ function stopBGM() {
 
 window.onload = () => {
   playBGM();
+  startTimer();
 };
 
 
@@ -173,8 +184,40 @@ function undoMove() {
 
   render();
   showKifu();
+  startTimer();
 }
 
+/* タイマー管理用変数 */
+let timerInterval = null;
+let currentSeconds = 0;
+
+/* タイマー開始（リセットしてスタート） */
+function startTimer() {
+  stopTimer(); // 既存のタイマーがあれば止める
+  currentSeconds = 0;
+  updateTimerDisplay();
+
+  timerInterval = setInterval(() => {
+    currentSeconds++;
+    updateTimerDisplay();
+  }, 1000);
+}
+
+/* タイマー停止 */
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+/* 表示更新 */
+function updateTimerDisplay() {
+  const timerBox = document.getElementById("timerBox");
+  if (timerBox) {
+    timerBox.textContent = "考慮時間: " + currentSeconds + "秒";
+  }
+}
 
 /*描画*/
 
@@ -390,6 +433,13 @@ function movePieceWithSelected(sel, x, y) {
   turn = turn === "black" ? "white" : "black";
   showKifu();
 
+  // ★追加：勝負がついていなければタイマーをリセットして再開
+  if (!gameOver) {
+    startTimer();
+  } else {
+    stopTimer(); // 勝負がついたら時計を止める
+  }
+
   // CPUの手番なら自動で指す
   if (!isSimulating && cpuEnabled && turn === cpuSide && !gameOver) {
     setTimeout(() => cpuMove(), 1000); // 1秒でCPUの手を指す
@@ -561,41 +611,48 @@ function getLegalMoves(x, y) {
 
 /*持ち駒打ち自玉王手二歩禁止*/
 
-function getLegalDrops(player, piece) {
+/* 持ち駒打ち（二歩・打ち歩詰め・行き所のない駒・自玉王手 の禁止） */
+function getLegalDrops(player, piece, ignorePawnMate = false) {
   const moves = [];
+  const isBlack = (player === "black");
+
+  // 二歩チェック用の列リスト
+  const nifuColumns = new Array(9).fill(false);
+  if (piece === "P") {
+    for (let x = 0; x < 9; x++) {
+      for (let y = 0; y < 9; y++) {
+        const p = boardState[y][x];
+        // 自分の成っていない「歩」があるかチェック
+        if ((isBlack && p === "P") || (!isBlack && p === "p")) {
+          nifuColumns[x] = true;
+          break;
+        }
+      }
+    }
+  }
+
   for (let y = 0; y < 9; y++) {
     for (let x = 0; x < 9; x++) {
       if (boardState[y][x] !== "") continue;
 
-      // 打てない段チェック
-      if ((piece === "P" || piece === "L") &&
-          y === (player === "black" ? 0 : 8)) continue;
-      if (piece === "N" &&
-          (y === (player === "black" ? 0 : 8) ||
-           y === (player === "black" ? 1 : 7))) continue;
+      // 行き所のない駒
+      if ((piece === "P" || piece === "L") && y === (isBlack ? 0 : 8)) continue;
+      if (piece === "N" && (isBlack ? y <= 1 : y >= 7)) continue;
 
-      // 二歩禁止
-      if (piece === "P") {
-        let nifu = false;
-        for (let ty = 0; ty < 9; ty++) {
-          const p = boardState[ty][x];
-          if (p && p.toUpperCase() === "P" && !p.startsWith("+") &&
-              ((p === p.toUpperCase()) === (player === "black"))) {
-            nifu = true;
-            break;
-          }
-        }
-        if (nifu) continue;
+      // 二歩
+      if (piece === "P" && nifuColumns[x]) continue;
 
-        // 打ち歩詰め禁止
+      // 打ち歩詰め (ignorePawnMateがfalseの時のみチェックして無限再帰を防ぐ)
+      if (piece === "P" && !ignorePawnMate) {
         if (isPawnDropMate(x, y, player)) continue;
       }
 
-      // 自玉王手禁止
-      const placed = player === "black" ? piece : piece.toLowerCase();
+      // 自玉が王手になる（または王手が解けない）場所には打てない
+      const placed = isBlack ? piece : piece.toLowerCase();
       boardState[y][x] = placed;
       const inCheck = isKingInCheck(player);
       boardState[y][x] = "";
+
       if (inCheck) continue;
 
       moves.push({ x, y });
@@ -604,6 +661,46 @@ function getLegalDrops(player, piece) {
   return moves;
 }
 
+function isPawnDropMate(x, y, player) {
+  const piece = player === "black" ? "P" : "p";
+  boardState[y][x] = piece;
+
+  const opponent = player === "black" ? "white" : "black";
+  
+  // 相手玉に王手がかかっているか
+  const inCheck = isKingInCheck(opponent);
+  if (!inCheck) {
+    boardState[y][x] = "";
+    return false;
+  }
+
+  // 相手に回避手段があるかチェック（打ち歩詰めチェック中フラグを立てる）
+  const hasMove = hasAnyLegalMove(opponent, true);
+
+  boardState[y][x] = "";
+  return !hasMove; // 王手かつ回避不可なら打ち歩詰め
+}
+
+function hasAnyLegalMove(player, isCheckingPawnMate = false) {
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const p = boardState[y][x];
+      if (!p) continue;
+      const isWhite = p === p.toLowerCase();
+      if ((player === "black" && !isWhite) || (player === "white" && isWhite)) {
+        if (getLegalMoves(x, y).length > 0) return true;
+      }
+    }
+  }
+  const hand = hands[player];
+  // 持ち駒の種類を重複排除してチェック（高速化）
+  const uniqueHand = Array.from(new Set(hand));
+  for (const p of uniqueHand) {
+    // getLegalDropsにtrueを渡し、再帰的な打ち歩詰めチェックをスキップ
+    if (getLegalDrops(player, p, isCheckingPawnMate).length > 0) return true;
+  }
+  return false;
+}
 
 /*新規関数*/
 
@@ -681,6 +778,7 @@ function resignGame() {
   if (!confirm("投了？")) return;
 
   gameOver = true;
+  stopTimer();
   winner = turn === "black" ? "white" : "black";
   statusDiv.textContent = "投了により、" + (winner === "black" ? "先手" : "後手") + "の勝ちです。";
   checkStatusDiv.textContent = "";
@@ -695,24 +793,76 @@ function resignGame() {
 
 /*CPUの静かな手実行関数*/
 
+/* CPUの仮想移動（Make Move） */
 function makeSilentMove(move) {
-  const player = move.fromHand ? move.player : (boardState[move.y0][move.x0] === boardState[move.y0][move.x0].toLowerCase() ? "white" : "black");
+  const player = turn; // 現在の手番（black or white）
+  const pieceBefore = move.fromHand 
+    ? hands[player][move.index] 
+    : boardState[move.y0][move.x0];
+
+  const record = {
+    fromHand: move.fromHand,
+    fromX: move.x0,
+    fromY: move.y0,
+    toX: move.x1,
+    toY: move.y1,
+    pieceMoved: pieceBefore,
+    capturedPiece: boardState[move.y1][move.x1],
+    index: move.index, // 持ち駒の何番目を使ったか
+    wasPromoted: false
+  };
 
   if (move.fromHand) {
-    const piece = hands[player][move.index];
-    boardState[move.y1][move.x1] = player === "black" ? piece : piece.toLowerCase();
-    hands[player].splice(move.index, 1);
+    // 持ち駒を打つ
+    const piece = hands[player].splice(move.index, 1)[0];
+    boardState[move.y1][move.x1] = (player === "white") ? piece.toLowerCase() : piece;
   } else {
+    // 盤上の駒を動かす
     let piece = boardState[move.y0][move.x0];
-    const target = boardState[move.y1][move.x1];
-    if (target) {
-      hands[player].push(target.replace("+","").toUpperCase());
+    
+    // 駒を取る
+    if (record.capturedPiece) {
+      const cap = record.capturedPiece.replace("+","").toUpperCase();
+      hands[player].push(cap);
     }
+
+    // ★ 簡易的な成りの判定（シミュレーション用）
+    const base = piece.replace("+","").toUpperCase();
+    if (!piece.includes("+") && ["P","L","N","S","B","R"].includes(base)) {
+      if (isInPromotionZone(move.y1, player) || isInPromotionZone(move.y0, player)) {
+        piece = (player === "white") ? ("+" + base).toLowerCase() : ("+" + base);
+        record.wasPromoted = true;
+      }
+    }
+
     boardState[move.y0][move.x0] = "";
     boardState[move.y1][move.x1] = piece;
   }
 
-  turn = turn === "black" ? "white" : "black";
+  turn = (turn === "black" ? "white" : "black");
+  return record;
+}
+
+/* 仮想移動を元に戻す（Unmake Move） */
+function unmakeSilentMove(record) {
+  // まず手番を戻す
+  turn = (turn === "black" ? "white" : "black");
+  const player = turn;
+
+  if (record.fromHand) {
+    // 打ったのを戻す
+    boardState[record.toY][record.toX] = "";
+    hands[player].splice(record.index, 0, record.pieceMoved);
+  } else {
+    // 動かしたのを戻す
+    boardState[record.fromY][record.fromX] = record.pieceMoved;
+    boardState[record.toY][record.toX] = record.capturedPiece;
+
+    // 取った駒をリストから消す
+    if (record.capturedPiece) {
+      hands[player].pop();
+    }
+  }
 }
 
 
@@ -864,7 +1014,7 @@ function cpuMove() {
   }
 
 
-  // 通常思考あああああああああああああああああああああああああああああああああああああああああああああああ
+  // 通常思考
   const bestMove = findBestMove(3);
 
   if (!bestMove) return;
@@ -885,33 +1035,55 @@ function cpuMove() {
 
 /*CPU評価*/
 
+// 駒の基本価値（少し調整）
 const pieceValues = {
-  "P": 100, "L": 300, "N": 300, "S": 500,
-  "G": 600, "B": 800, "R": 1000, "K": 10000,
-  "+P": 500, "+L": 500, "+N": 500, "+S": 600,
-  "+B": 900, "+R": 1100
+  "P": 50, "L": 200, "N": 250, "S": 300,
+  "G": 350, "B": 600, "R": 650, "K": 99999, // 王は無限の価値
+  "+P": 350, "+L": 300, "+N": 300, "+S": 350,
+  "+B": 650, "+R": 750
 };
+
 
 function evaluateBoard(player) {
   let score = 0;
 
-  // 盤上の駒
+  // 1. 盤上の駒の評価
   for (let y = 0; y < 9; y++) {
     for (let x = 0; x < 9; x++) {
       const p = boardState[y][x];
       if (!p) continue;
+
       const isWhite = p === p.toLowerCase();
       const owner = isWhite ? "white" : "black";
-      const key = p.startsWith("+") ? "+" + p.replace("+","").toUpperCase() : p.toUpperCase();
-      const value = pieceValues[key] || 0;
-      score += (owner === player) ? value : -value;
+      const baseKey = p.replace("+", "").toUpperCase();
+      const key = p.startsWith("+") ? "+" + baseKey : baseKey;
+
+      // 基本価値
+      let materialValue = pieceValues[key] || 0;
+
+      // 位置ボーナス（玉と金のみ適用例）
+      let positionalValue = 0;
+      if (positionBonus[baseKey] && (moveCount < 25 || baseKey === "K" || baseKey === "G")) {
+        // 白（後手）の場合は座標を反転させて評価テーブルを参照
+        const tableY = isWhite ? (8 - y) : y;
+        const tableX = isWhite ? (8 - x) : x;
+        positionalValue = positionBonus[baseKey][tableY][tableX];
+      }
+
+      const totalValue = materialValue + positionalValue;
+
+      if (owner === player) {
+        score += totalValue;
+      } else {
+        score -= totalValue;
+      }
     }
   }
 
-  // 持ち駒
-  hands[player].forEach(p => score += pieceValues[p] || 0);
+  // 2. 持ち駒の評価（少し高めに評価して、無駄に打つのを防ぐ）
+  hands[player].forEach(p => score += (pieceValues[p] || 0) * 1.1);
   const opponent = player === "black" ? "white" : "black";
-  hands[opponent].forEach(p => score -= pieceValues[p] || 0);
+  hands[opponent].forEach(p => score -= (pieceValues[p] || 0) * 1.1);
 
   return score;
 }
@@ -963,27 +1135,95 @@ function getAllLegalMoves(player) {
 
 /*ミニマックス*/
 
-function findBestMove(depth = 5) {
-  isSimulating = true;
+function sortMoves(moves) {
+  return moves.sort((a, b) => {
+    // 評価値の高い駒を取る手を優先
+    let scoreA = 0;
+    let scoreB = 0;
 
+    // Aの手の評価
+    if (!a.fromHand) {
+      const targetA = boardState[a.y1][a.x1];
+      if (targetA) {
+        const keyA = targetA.replace("+","").toUpperCase();
+        scoreA = pieceValues[keyA] || 0;
+      }
+    }
+
+    // Bの手の評価
+    if (!b.fromHand) {
+      const targetB = boardState[b.y1][b.x1];
+      if (targetB) {
+        const keyB = targetB.replace("+","").toUpperCase();
+        scoreB = pieceValues[keyB] || 0;
+      }
+    }
+
+    return scoreB - scoreA; // 降順（価値が高い順）
+  });
+}
+
+/* 時間制限付きの探索用変数 */
+let searchStartTime = 0;
+const TIME_LIMIT = 10000; // 10秒 (ミリ秒)
+
+function findBestMove(maxDepth = 3) {
+  isSimulating = true;
   const player = cpuSide;
   const allMoves = getAllLegalMoves(player);
+  
+  if (allMoves.length === 0) {
+    isSimulating = false;
+    return null;
+  }
+  if (allMoves.length === 1) {
+    isSimulating = false;
+    return allMoves[0];
+  }
+  
+  sortMoves(allMoves);
+  let bestMove = allMoves[0]; 
+  searchStartTime = Date.now();
 
-  let bestScore = -Infinity;
-  let bestMove = null;
+  try {
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      let currentBestMove = null;
+      let bestScore = -Infinity;
 
-  for (const move of allMoves) {
-    const snapshot = deepCopyState();
-    makeSilentMove(move);
+      for (const move of allMoves) {
+        const record = makeSilentMove(move);
+        let score;
+        try {
+          // ミニマックス法を呼び出す。ここでもfinallyで戻す処理が必要
+          score = minimax(depth - 1, false, -Infinity, Infinity);
+        } finally {
+          // ★ここが重要：タイムアウトで中断されても、必ず盤面を戻す
+          unmakeSilentMove(record);
+        }
 
-    // アルファベータ剪定を使って評価
-    const score = minimax(depth - 1, false, -Infinity, Infinity);
+        if (score > bestScore) {
+          bestScore = score;
+          currentBestMove = move;
+        }
+      }
 
-    restoreState(snapshot);
-
-    if (score > bestScore) {
-      bestScore = score;
-      bestMove = move;
+      if (currentBestMove) {
+        bestMove = currentBestMove;
+        if (bestScore >= 90000) break; 
+      }
+      
+      // 次の探索効率を上げるため、暫定ベストを先頭へ
+      const bestIdx = allMoves.indexOf(bestMove);
+      if (bestIdx > -1) {
+        allMoves.splice(bestIdx, 1);
+        allMoves.unshift(bestMove);
+      }
+    }
+  } catch (e) {
+    if (e === "TIMEOUT") {
+      console.log("思考時間が制限を超えたため、中断時点の最善手を指します。");
+    } else {
+      console.error(e);
     }
   }
 
@@ -992,55 +1232,54 @@ function findBestMove(depth = 5) {
 }
 
 function minimax(depth, isMaximizing, alpha, beta) {
+  if ((Date.now() - searchStartTime) > TIME_LIMIT) {
+    throw "TIMEOUT";
+  }
+
   if (depth === 0 || gameOver) {
     return evaluateBoard(cpuSide);
   }
 
-  const player = isMaximizing ? cpuSide : (cpuSide === "black" ? "white" : "black");
-  const moves = getAllLegalMoves(player);
+  const currentPlayer = isMaximizing ? cpuSide : (cpuSide === "black" ? "white" : "black");
+  const moves = getAllLegalMoves(currentPlayer);
 
   if (moves.length === 0) {
-    if (isKingInCheck(player)) {
-      return isMaximizing ? -100000 : 100000;
-    }
-    return 0;
+    return isKingInCheck(currentPlayer) ? (isMaximizing ? -100000 : 100000) : 0;
   }
+  
+  if (depth > 1) sortMoves(moves);
 
   if (isMaximizing) {
     let maxEval = -Infinity;
     for (const move of moves) {
-      const snapshot = deepCopyState();
-      makeSilentMove(move);
-      const eval = minimax(depth - 1, false, alpha, beta);
-      restoreState(snapshot);
-
-      maxEval = Math.max(maxEval, eval);
-      alpha = Math.max(alpha, maxEval);  // αを更新
-
-      if (beta <= alpha) {
-        break;  // βカット
+      const record = makeSilentMove(move);
+      try {
+        const eval = minimax(depth - 1, false, alpha, beta);
+        maxEval = Math.max(maxEval, eval);
+        alpha = Math.max(alpha, maxEval);
+      } finally {
+        // ★ここが重要：再帰の奥深くでタイムアウトしても盤面を戻す
+        unmakeSilentMove(record);
       }
+      if (beta <= alpha) break;
     }
     return maxEval;
   } else {
     let minEval = Infinity;
     for (const move of moves) {
-      const snapshot = deepCopyState();
-      makeSilentMove(move);
-      const eval = minimax(depth - 1, true, alpha, beta);
-      restoreState(snapshot);
-
-      minEval = Math.min(minEval, eval);
-      beta = Math.min(beta, minEval);  // βを更新
-
-      if (beta <= alpha) {
-        break;  // αカット
+      const record = makeSilentMove(move);
+      try {
+        const eval = minimax(depth - 1, true, alpha, beta);
+        minEval = Math.min(minEval, eval);
+        beta = Math.min(beta, minEval);
+      } finally {
+        unmakeSilentMove(record);
       }
+      if (beta <= alpha) break;
     }
     return minEval;
   }
 }
-
 
 </script>
 
