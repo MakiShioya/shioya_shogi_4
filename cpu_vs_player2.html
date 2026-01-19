@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>しおや将棋 vsこみや</title>
+<title>しおや将棋 CPU対戦</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -612,68 +612,94 @@ function getLegalMoves(x, y) {
 /*持ち駒打ち自玉王手二歩禁止*/
 
 /* 持ち駒打ち（二歩・打ち歩詰め・行き所のない駒・自玉王手 の禁止） */
-function getLegalDrops(player, piece) {
+function getLegalDrops(player, piece, ignorePawnMate = false) {
   const moves = [];
   const isBlack = (player === "black");
 
-  // 【高速化＆バグ修正】
-  // 歩を打つ場合、先に「二歩になる列（筋）」を調べておく
+  // 二歩チェック用の列リスト
   const nifuColumns = new Array(9).fill(false);
-  
   if (piece === "P") {
     for (let x = 0; x < 9; x++) {
       for (let y = 0; y < 9; y++) {
         const p = boardState[y][x];
-        if (p) {
-          // 盤上の駒が「自分の歩」かつ「成っていない」か確認
-          const isMyPiece = isBlack ? (p === p.toUpperCase()) : (p === p.toLowerCase());
-          const base = p.replace("+", "").toUpperCase();
-          
-          if (isMyPiece && base === "P" && !p.includes("+")) {
-            nifuColumns[x] = true; // この列には歩を打てない
-            break; // 列の残りは見る必要なし
-          }
+        // 自分の成っていない「歩」があるかチェック
+        if ((isBlack && p === "P") || (!isBlack && p === "p")) {
+          nifuColumns[x] = true;
+          break;
         }
       }
     }
   }
 
-  // 打てる場所を探す
   for (let y = 0; y < 9; y++) {
     for (let x = 0; x < 9; x++) {
-      // 駒がある場所には打てない
       if (boardState[y][x] !== "") continue;
 
-      // --- 行き所のない駒の禁止 ---
-      // 歩と香車：1段目（後手なら9段目）には打てない
+      // 行き所のない駒
       if ((piece === "P" || piece === "L") && y === (isBlack ? 0 : 8)) continue;
-      // 桂馬：2段目まで（後手なら8段目まで）には打てない
       if (piece === "N" && (isBlack ? y <= 1 : y >= 7)) continue;
 
-      // --- 二歩禁止 ---
-      // さっき調べたリストを見て、ダメな列ならスキップ
+      // 二歩
       if (piece === "P" && nifuColumns[x]) continue;
 
-      // --- 打ち歩詰め禁止 ---
-      // 二歩チェックを通過した歩のみ、打ち歩詰め判定を行う（重い処理なのでここで行う）
-      if (piece === "P") {
+      // 打ち歩詰め (ignorePawnMateがfalseの時のみチェックして無限再帰を防ぐ)
+      if (piece === "P" && !ignorePawnMate) {
         if (isPawnDropMate(x, y, player)) continue;
       }
 
-      // --- 自玉王手（自殺手）禁止 ---
-      // 実際に置いてみて王手がかかるかチェック
+      // 自玉が王手になる（または王手が解けない）場所には打てない
       const placed = isBlack ? piece : piece.toLowerCase();
-      boardState[y][x] = placed; // 仮置き
+      boardState[y][x] = placed;
       const inCheck = isKingInCheck(player);
-      boardState[y][x] = ""; // 戻す
+      boardState[y][x] = "";
 
       if (inCheck) continue;
 
-      // 全てのチェックを通過したら合法手
       moves.push({ x, y });
     }
   }
   return moves;
+}
+
+function isPawnDropMate(x, y, player) {
+  const piece = player === "black" ? "P" : "p";
+  boardState[y][x] = piece;
+
+  const opponent = player === "black" ? "white" : "black";
+  
+  // 相手玉に王手がかかっているか
+  const inCheck = isKingInCheck(opponent);
+  if (!inCheck) {
+    boardState[y][x] = "";
+    return false;
+  }
+
+  // 相手に回避手段があるかチェック（打ち歩詰めチェック中フラグを立てる）
+  const hasMove = hasAnyLegalMove(opponent, true);
+
+  boardState[y][x] = "";
+  return !hasMove; // 王手かつ回避不可なら打ち歩詰め
+}
+
+function hasAnyLegalMove(player, isCheckingPawnMate = false) {
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const p = boardState[y][x];
+      if (!p) continue;
+      const isWhite = p === p.toLowerCase();
+      if ((player === "black" && !isWhite) || (player === "white" && isWhite)) {
+        if (getLegalMoves(x, y).length > 0) return true;
+      }
+    }
+  }
+  const hand = hands[player];
+  // 持ち駒の種類を重複排除してチェック（高速化）
+  const uniqueHand = Array.from(new Set(hand));
+  for (const p of uniqueHand) {
+    // getLegalDropsにtrueを渡し、再帰的な打ち歩詰めチェックをスキップ
+    if (getLegalDrops(player, p, isCheckingPawnMate).length > 0) return true;
+  }
+  return false;
 }
 
 /*新規関数*/
@@ -988,7 +1014,7 @@ function cpuMove() {
   }
 
 
-  // 通常思考あああああああああああああああああああああああああああああああああああああああああああああああ
+  // 通常思考
   const bestMove = findBestMove(4);
 
   if (!bestMove) return;
@@ -1012,7 +1038,7 @@ function cpuMove() {
 // 駒の基本価値（少し調整）
 const pieceValues = {
   "P": 50, "L": 200, "N": 250, "S": 300,
-  "G": 350, "B": 500, "R": 600, "K": 99999, // 王は無限の価値
+  "G": 350, "B": 600, "R": 650, "K": 99999, // 王は無限の価値
   "+P": 350, "+L": 300, "+N": 300, "+S": 350,
   "+B": 650, "+R": 750
 };
@@ -1219,65 +1245,56 @@ function findBestMove(maxDepth = 4) {
   const player = cpuSide;
   const allMoves = getAllLegalMoves(player);
   
-  // 合法手が1つしかない場合は計算せずに即返す（高速化）
+  if (allMoves.length === 0) {
+    isSimulating = false;
+    return null;
+  }
   if (allMoves.length === 1) {
     isSimulating = false;
     return allMoves[0];
   }
   
-  // 念のため初期ソート
   sortMoves(allMoves);
-
-  let bestMove = allMoves[0]; // 初期値（万が一時間がなくてもこれを返す）
-  searchStartTime = Date.now(); // 計測開始
+  let bestMove = allMoves[0]; 
+  searchStartTime = Date.now();
 
   try {
-    // 【反復深化】深さ1から徐々に深くしていく
     for (let depth = 1; depth <= maxDepth; depth++) {
-      
       let currentBestMove = null;
       let bestScore = -Infinity;
 
-      // この深さでの探索
       for (const move of allMoves) {
         const record = makeSilentMove(move);
-        
-        // 探索実行（時間切れならここで例外が投げられる）
-        // alpha-beta法の初期窓を -Infinity, Infinity に設定
-        const score = minimax(depth - 1, false, -Infinity, Infinity);
-        
-        unmakeSilentMove(record);
+        let score;
+        try {
+          // ミニマックス法を呼び出す。ここでもfinallyで戻す処理が必要
+          score = minimax(depth - 1, false, -Infinity, Infinity);
+        } finally {
+          // ★ここが重要：タイムアウトで中断されても、必ず盤面を戻す
+          unmakeSilentMove(record);
+        }
 
         if (score > bestScore) {
           bestScore = score;
           currentBestMove = move;
         }
-        
-        // メインループ内でも時間チェック（念のため）
-        if (Date.now() - searchStartTime > TIME_LIMIT) {
-          throw "TIMEOUT";
-        }
       }
 
-      // この深さの探索が完了したら、最善手を更新
       if (currentBestMove) {
         bestMove = currentBestMove;
-        
-        // 見つかった手が「詰み（勝ち）」の点数なら、これ以上深く読む必要はない
-        if (bestScore >= 90000) break;
+        if (bestScore >= 90000) break; 
       }
       
-      // 有効な手が見つかるたびに、次の深さの探索効率を上げるために並び替える
-      // (前回よかった手を優先的に調べる)
-      const bestMoveIndex = allMoves.indexOf(bestMove);
-      if (bestMoveIndex > -1) {
-        allMoves.splice(bestMoveIndex, 1);
+      // 次の探索効率を上げるため、暫定ベストを先頭へ
+      const bestIdx = allMoves.indexOf(bestMove);
+      if (bestIdx > -1) {
+        allMoves.splice(bestIdx, 1);
         allMoves.unshift(bestMove);
       }
     }
   } catch (e) {
     if (e === "TIMEOUT") {
-      console.log("思考時間が10秒を超えたため、現在の最善手を指します。");
+      console.log("思考時間が制限を超えたため、中断時点の最善手を指します。");
     } else {
       console.error(e);
     }
@@ -1288,11 +1305,8 @@ function findBestMove(maxDepth = 4) {
 }
 
 function minimax(depth, isMaximizing, alpha, beta) {
-  // 【時間切れチェック】
-  // 頻繁に呼び出されるので、約2000回に1回程度チェックするなど間引くとさらに軽くなりますが
-  // 正確に止めるために毎回チェックしても今のPCなら大丈夫です。
   if ((Date.now() - searchStartTime) > TIME_LIMIT) {
-    throw "TIMEOUT"; // 強制的に処理を中断して findBestMove の catch へ飛ばす
+    throw "TIMEOUT";
   }
 
   if (depth === 0 || gameOver) {
@@ -1303,22 +1317,23 @@ function minimax(depth, isMaximizing, alpha, beta) {
   const moves = getAllLegalMoves(currentPlayer);
 
   if (moves.length === 0) {
-    // ステイルメイトや詰みの判定
     return isKingInCheck(currentPlayer) ? (isMaximizing ? -100000 : 100000) : 0;
   }
   
-  // 簡易的な手の並べ替え（探索効率化のため）
-  // 毎回ソートすると重いので、深さが浅いときだけにするなどの調整も可
   if (depth > 1) sortMoves(moves);
 
   if (isMaximizing) {
     let maxEval = -Infinity;
     for (const move of moves) {
       const record = makeSilentMove(move);
-      const eval = minimax(depth - 1, false, alpha, beta);
-      unmakeSilentMove(record);
-      maxEval = Math.max(maxEval, eval);
-      alpha = Math.max(alpha, maxEval);
+      try {
+        const eval = minimax(depth - 1, false, alpha, beta);
+        maxEval = Math.max(maxEval, eval);
+        alpha = Math.max(alpha, maxEval);
+      } finally {
+        // ★ここが重要：再帰の奥深くでタイムアウトしても盤面を戻す
+        unmakeSilentMove(record);
+      }
       if (beta <= alpha) break;
     }
     return maxEval;
@@ -1326,15 +1341,19 @@ function minimax(depth, isMaximizing, alpha, beta) {
     let minEval = Infinity;
     for (const move of moves) {
       const record = makeSilentMove(move);
-      const eval = minimax(depth - 1, true, alpha, beta);
-      unmakeSilentMove(record);
-      minEval = Math.min(minEval, eval);
-      beta = Math.min(beta, minEval);
+      try {
+        const eval = minimax(depth - 1, true, alpha, beta);
+        minEval = Math.min(minEval, eval);
+        beta = Math.min(beta, minEval);
+      } finally {
+        unmakeSilentMove(record);
+      }
       if (beta <= alpha) break;
     }
     return minEval;
   }
 }
+
 </script>
 
 <audio id="bgm" src="natsu2.mp3" loop></audio>
@@ -1343,4 +1362,3 @@ function minimax(depth, isMaximizing, alpha, beta) {
 
 </body>
 </html>
-
