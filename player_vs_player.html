@@ -36,6 +36,16 @@
 
 </div>
 
+<div id="center">
+    <div id="status"></div>
+    
+    <div id="timerBox" style="font-weight: bold; font-size: 18px; margin: 5px 0; color: #333;">
+      考慮時間: 0秒
+    </div>
+    <div id="checkStatus"></div>
+    <table id="board"></table>
+  </div>
+
 <div id="kifu" style="margin-top: 10px; text-align: left;"></div>
 
 <script>
@@ -64,6 +74,7 @@ function stopBGM() {
 
 window.onload = () => {
   playBGM();
+  startTimer();
 };
 
 
@@ -173,6 +184,39 @@ function undoMove() {
 
   render();
   showKifu();
+  startTimer();
+}
+
+/* タイマー管理用変数 */
+let timerInterval = null;
+let currentSeconds = 0;
+
+/* タイマー開始（リセットしてスタート） */
+function startTimer() {
+  stopTimer(); // 既存のタイマーがあれば止める
+  currentSeconds = 0;
+  updateTimerDisplay();
+
+  timerInterval = setInterval(() => {
+    currentSeconds++;
+    updateTimerDisplay();
+  }, 1000);
+}
+
+/* タイマー停止 */
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+/* 表示更新 */
+function updateTimerDisplay() {
+  const timerBox = document.getElementById("timerBox");
+  if (timerBox) {
+    timerBox.textContent = "考慮時間: " + currentSeconds + "秒";
+  }
 }
 
 
@@ -386,6 +430,13 @@ function movePieceWithSelected(sel, x, y) {
   turn = turn === "black" ? "white" : "black";
   showKifu();
 
+
+  // ★追加：勝負がついていなければタイマーをリセットして再開
+  if (!gameOver) {
+    startTimer();
+  } else {
+    stopTimer(); // 勝負がついたら時計を止める
+  }
 
   // 500手引き分け
   moveCount++;
@@ -673,6 +724,7 @@ function resignGame() {
   if (!confirm("投了？")) return;
 
   gameOver = true;
+  stopTimer();
   winner = turn === "black" ? "white" : "black";
   statusDiv.textContent = "投了により、" + (winner === "black" ? "先手" : "後手") + "の勝ちです。";
   checkStatusDiv.textContent = "";
