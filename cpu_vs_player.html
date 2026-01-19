@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>しおや将棋 CPU対戦</title>
+<title>しおや将棋 たわむれ</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -314,7 +314,6 @@ function renderHands() {
 function onCellClick(x, y) {
   if (gameOver) return;
 
-  // CPUの手番中はプレイヤーの入力を無効にする
   if (cpuEnabled && turn === cpuSide) {
     return; // CPUの手番中はクリックできない
   }
@@ -365,7 +364,6 @@ function movePieceWithSelected(sel, x, y) {
   const moveNumber = kifu.length + 1;
   kifu.push("");  
 
-  // さしたときの音
   moveSound.currentTime = 0;
   moveSound.volume = 0.3;
   moveSound.play();
@@ -429,23 +427,19 @@ function movePieceWithSelected(sel, x, y) {
     };
   }
 
-  // 手番交代
   turn = turn === "black" ? "white" : "black";
   showKifu();
 
-  // ★追加：勝負がついていなければタイマーをリセットして再開
   if (!gameOver) {
     startTimer();
   } else {
-    stopTimer(); // 勝負がついたら時計を止める
+    stopTimer(); 
   }
 
-  // CPUの手番なら自動で指す
   if (!isSimulating && cpuEnabled && turn === cpuSide && !gameOver) {
     setTimeout(() => cpuMove(), 1000); // 1秒でCPUの手を指す
   }
 
-  // 500手引き分け
   moveCount++;
   if (moveCount >= 500) {
     gameOver = true;
@@ -455,14 +449,12 @@ function movePieceWithSelected(sel, x, y) {
     return;
   }
 
-  // 詰み判定
   if (isKingInCheck(turn) && !hasAnyLegalMove(turn)) {
     gameOver = true;
     winner = turn === "black" ? "white" : "black";
     showKifu();
   }
 
-  // 千日手判定
   const key = getPositionKey();
   positionHistory[key] = (positionHistory[key] || 0) + 1;
 
@@ -594,13 +586,11 @@ function getLegalMoves(x, y) {
     const fromPiece = boardState[y][x];
     const toPiece = boardState[m.y][m.x];
 
-    // 盤面を一時的に変更
     boardState[m.y][m.x] = fromPiece;
     boardState[y][x] = "";
 
     const inCheck = isKingInCheck(player);
 
-    // 元に戻す
     boardState[y][x] = fromPiece;
     boardState[m.y][m.x] = toPiece;
 
@@ -616,13 +606,11 @@ function getLegalDrops(player, piece, ignorePawnMate = false) {
   const moves = [];
   const isBlack = (player === "black");
 
-  // 二歩チェック用の列リスト
   const nifuColumns = new Array(9).fill(false);
   if (piece === "P") {
     for (let x = 0; x < 9; x++) {
       for (let y = 0; y < 9; y++) {
         const p = boardState[y][x];
-        // 自分の成っていない「歩」があるかチェック
         if ((isBlack && p === "P") || (!isBlack && p === "p")) {
           nifuColumns[x] = true;
           break;
@@ -635,19 +623,15 @@ function getLegalDrops(player, piece, ignorePawnMate = false) {
     for (let x = 0; x < 9; x++) {
       if (boardState[y][x] !== "") continue;
 
-      // 行き所のない駒
       if ((piece === "P" || piece === "L") && y === (isBlack ? 0 : 8)) continue;
       if (piece === "N" && (isBlack ? y <= 1 : y >= 7)) continue;
 
-      // 二歩
       if (piece === "P" && nifuColumns[x]) continue;
 
-      // 打ち歩詰め (ignorePawnMateがfalseの時のみチェックして無限再帰を防ぐ)
       if (piece === "P" && !ignorePawnMate) {
         if (isPawnDropMate(x, y, player)) continue;
       }
 
-      // 自玉が王手になる（または王手が解けない）場所には打てない
       const placed = isBlack ? piece : piece.toLowerCase();
       boardState[y][x] = placed;
       const inCheck = isKingInCheck(player);
@@ -667,7 +651,6 @@ function isPawnDropMate(x, y, player) {
 
   const opponent = player === "black" ? "white" : "black";
   
-  // 相手玉に王手がかかっているか
   const inCheck = isKingInCheck(opponent);
   if (!inCheck) {
     boardState[y][x] = "";
@@ -678,7 +661,7 @@ function isPawnDropMate(x, y, player) {
   const hasMove = hasAnyLegalMove(opponent, true);
 
   boardState[y][x] = "";
-  return !hasMove; // 王手かつ回避不可なら打ち歩詰め
+  return !hasMove; 
 }
 
 function hasAnyLegalMove(player, isCheckingPawnMate = false) {
@@ -693,10 +676,10 @@ function hasAnyLegalMove(player, isCheckingPawnMate = false) {
     }
   }
   const hand = hands[player];
-  // 持ち駒の種類を重複排除してチェック（高速化）
+
   const uniqueHand = Array.from(new Set(hand));
   for (const p of uniqueHand) {
-    // getLegalDropsにtrueを渡し、再帰的な打ち歩詰めチェックをスキップ
+
     if (getLegalDrops(player, p, isCheckingPawnMate).length > 0) return true;
   }
   return false;
@@ -726,19 +709,18 @@ function hasAnyLegalMove(player) {
 
 
 function isPawnDropMate(x, y, player) {
-  // 歩を仮に打つ
+
   const piece = player === "black" ? "P" : "p";
   boardState[y][x] = piece;
 
-  // 相手番にしてチェック
+
   const opponent = player === "black" ? "white" : "black";
   const inCheck = isKingInCheck(opponent);
   const hasMove = hasAnyLegalMove(opponent);
 
-  // 元に戻す
+
   boardState[y][x] = "";
 
-  // 王手かつ合法手なし → 打ち歩詰め
   return inCheck && !hasMove;
 }
 
@@ -762,7 +744,6 @@ function recordRepetition() {
     repetitionHistory[key] = [];
   }
 
-  // 今の局面で王手をかけている側を記録
   const isCheck = isKingInCheck(turn);
   const checkingSide = isCheck ? (turn === "black" ? "white" : "black") : null;
 
@@ -826,7 +807,6 @@ function makeSilentMove(move) {
       hands[player].push(cap);
     }
 
-    // ★ 簡易的な成りの判定（シミュレーション用）
     const base = piece.replace("+","").toUpperCase();
     if (!piece.includes("+") && ["P","L","N","S","B","R"].includes(base)) {
       if (isInPromotionZone(move.y1, player) || isInPromotionZone(move.y0, player)) {
@@ -843,22 +823,22 @@ function makeSilentMove(move) {
   return record;
 }
 
-/* 仮想移動を元に戻す（Unmake Move） */
+
 function unmakeSilentMove(record) {
-  // まず手番を戻す
+
   turn = (turn === "black" ? "white" : "black");
   const player = turn;
 
   if (record.fromHand) {
-    // 打ったのを戻す
+
     boardState[record.toY][record.toX] = "";
     hands[player].splice(record.index, 0, record.pieceMoved);
   } else {
-    // 動かしたのを戻す
+
     boardState[record.fromY][record.fromX] = record.pieceMoved;
     boardState[record.toY][record.toX] = record.capturedPiece;
 
-    // 取った駒をリストから消す
+
     if (record.capturedPiece) {
       hands[player].pop();
     }
@@ -1046,6 +1026,8 @@ const pieceValues = {
 
 function evaluateBoard(player) {
   let score = 0;
+  const opponent = player === "black" ? "white" : "black";
+  const enemyKing = findKing(opponent);
 
   // 1. 盤上の駒の評価
   for (let y = 0; y < 9; y++) {
@@ -1058,32 +1040,35 @@ function evaluateBoard(player) {
       const baseKey = p.replace("+", "").toUpperCase();
       const key = p.startsWith("+") ? "+" + baseKey : baseKey;
 
-      // 基本価値
       let materialValue = pieceValues[key] || 0;
+      let positionalBonus = 0;
 
-      // 位置ボーナス（玉と金のみ適用例）
-      let positionalValue = 0;
-      if (positionBonus[baseKey] && (moveCount < 25 || baseKey === "K" || baseKey === "G")) {
-        // 白（後手）の場合は座標を反転させて評価テーブルを参照
-        const tableY = isWhite ? (8 - y) : y;
-        const tableX = isWhite ? (8 - x) : x;
-        positionalValue = positionBonus[baseKey][tableY][tableX];
-      }
-
-      const totalValue = materialValue + positionalValue;
-
+      // --- 積極性を生むためのボーナス ---
       if (owner === player) {
-        score += totalValue;
+        // 敵陣（奥3段）にいる駒にボーナス
+        if (isInPromotionZone(y, player)) positionalBonus += 30;
+        
+        // 相手の玉に近いほど加点（マンハッタン距離）
+        if (enemyKing) {
+          const dist = Math.abs(x - enemyKing.x) + Math.abs(y - enemyKing.y);
+          positionalBonus += (10 - dist) * 10; 
+        }
+        score += (materialValue + positionalBonus);
       } else {
-        score -= totalValue;
+        // 相手の駒も同様に計算（自分の玉への近さで減点）
+        const myKing = findKing(player);
+        if (myKing) {
+          const dist = Math.abs(x - myKing.x) + Math.abs(y - myKing.y);
+          positionalBonus += (10 - dist) * 10;
+        }
+        score -= (materialValue + positionalBonus);
       }
     }
   }
 
-  // 2. 持ち駒の評価（少し高めに評価して、無駄に打つのを防ぐ）
-  hands[player].forEach(p => score += (pieceValues[p] || 0) * 0.99);
-  const opponent = player === "black" ? "white" : "black";
-  hands[opponent].forEach(p => score -= (pieceValues[p] || 0) * 0.99);
+  // 2. 持ち駒の評価（少しだけ価値を下げることで、盤上に出したくなるようにする）
+  hands[player].forEach(p => score += (pieceValues[p] || 0) * 0.8);
+  hands[opponent].forEach(p => score -= (pieceValues[p] || 0) * 0.8);
 
   return score;
 }
@@ -1194,10 +1179,8 @@ function findBestMove(maxDepth = 3) {
         const record = makeSilentMove(move);
         let score;
         try {
-          // ミニマックス法を呼び出す。ここでもfinallyで戻す処理が必要
           score = minimax(depth - 1, false, -Infinity, Infinity);
         } finally {
-          // ★ここが重要：タイムアウトで中断されても、必ず盤面を戻す
           unmakeSilentMove(record);
         }
 
@@ -1212,7 +1195,6 @@ function findBestMove(maxDepth = 3) {
         if (bestScore >= 90000) break; 
       }
       
-      // 次の探索効率を上げるため、暫定ベストを先頭へ
       const bestIdx = allMoves.indexOf(bestMove);
       if (bestIdx > -1) {
         allMoves.splice(bestIdx, 1);
@@ -1258,7 +1240,6 @@ function minimax(depth, isMaximizing, alpha, beta) {
         maxEval = Math.max(maxEval, eval);
         alpha = Math.max(alpha, maxEval);
       } finally {
-        // ★ここが重要：再帰の奥深くでタイムアウトしても盤面を戻す
         unmakeSilentMove(record);
       }
       if (beta <= alpha) break;
@@ -1289,4 +1270,3 @@ function minimax(depth, isMaximizing, alpha, beta) {
 
 </body>
 </html>
-
