@@ -6,7 +6,7 @@
   <style>
     /* 背景画像の設定 */
     body {
-      background-image: url('https://github.com/MakiShioya/shioya_shogi_4/blob/main/shogi_title.PNG?raw=true'); /* 背景画像の指定 */
+      background-image: url('shogi_title.png'); /* 背景画像の指定 */
       background-size: cover; /* 画像を全体に合わせてリサイズ */
       background-repeat: no-repeat; /* 画像の繰り返しを防ぐ */
       background-position: center center; /* 画像を中央に配置 */
@@ -84,8 +84,7 @@
     /* お知らせボックスのスタイル */
     #announcementBox {
       width: 300px;  /* 幅を固定 */
-      height: 300px; /* 高さを固定 */
-      overflow-y: auto;
+      height: 200px; /* 高さを固定 */
       background-color: rgba(255, 165, 0, 0.5); /* 半透明のオレンジ色 */
       padding: 20px;
       border-radius: 10px;
@@ -135,20 +134,15 @@
     <!-- お知らせボックス -->
     <div id="announcementBox">
       <h3>お知らせ</h3>
-      <p>相手の手番で長く動かなくなる問題を修正しました。<br><br>タイマーを追加しました。<br><br>
-          CPUの持ち時間を1手につき最大10秒にしました。<br><br>
-         「ひとりで」はCPU対戦モードです。<br>
-         「たわむれ」はよわいCPUです。<br>
-         「こみや」「しおや」は強さは同程度ですが、性格が異なります。<br><br>
-         「ふたりで」はプレイヤー同士で対戦するモードです。<br><br>
-         最終更新<br>2026年 1月19日 15時48分
-      </p>
+      <p>現在、相手が行動しなくなるバグが発生しています。対応中です。
+7:12更新</p>
     </div>
   </div>
 
   <div id="difficultyMenu">
     <h2>対戦相手選択</h2>
-    <button onclick="startGame('easy')">たわむれ</button>
+    <button onclick="startGame('saijaku')">たわむれ</button>
+    <button onclick="startGame('easy')">おあそび</button>
     <button onclick="startGame('normal')">こみや</button>
     <button onclick="startGame('hard')">しおや</button>
   </div>
@@ -167,7 +161,9 @@
 
     function startGame(difficulty) {
       // 選択された難易度に応じたページに遷移
-      if (difficulty === 'easy') {
+      if (difficulty === 'saijaku') {
+        window.location.href = "saijaku.html";
+      } else if (difficulty === 'easy') {
         window.location.href = "cpu_vs_player.html";
       } else if (difficulty === 'normal') {
         window.location.href = "cpu_vs_player2.html";
@@ -179,15 +175,3 @@
 
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
